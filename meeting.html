@@ -1,0 +1,743 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Meeting - VideoMeet</title>
+  <link rel="stylesheet" href="css/main.css">
+  <link rel="stylesheet" href="css/components.css">
+  <link rel="stylesheet" href="css/meeting.css">
+  <style>
+    :root { --primary: #6366F1; }
+    body { background: #0F172A; margin: 0; overflow: hidden; }
+    .meeting-container { display: flex; flex-direction: column; height: 100vh; }
+    .meeting-header { display: flex; align-items: center; justify-content: space-between; padding: 0.75rem 1.5rem; background: rgba(15, 23, 42, 0.95); border-bottom: 1px solid #334155; z-index: 100; }
+    .meeting-info { display: flex; align-items: center; gap: 1rem; }
+    .meeting-logo { display: flex; align-items: center; gap: 0.5rem; font-family: 'Outfit', sans-serif; font-size: 1.25rem; font-weight: 700; color: #6366F1; }
+    .meeting-logo svg { width: 28px; height: 28px; }
+    .meeting-id { display: flex; align-items: center; gap: 0.5rem; padding: 0.375rem 0.75rem; background: #1E293B; border-radius: 6px; font-size: 0.8125rem; color: #94A3B8; }
+    .meeting-id code { color: #F8FAFC; font-family: monospace; }
+    .meeting-timer { font-size: 0.875rem; color: #94A3B8; font-variant-numeric: tabular-nums; }
+    .recording-indicator { display: none; align-items: center; gap: 0.375rem; padding: 0.375rem 0.75rem; background: rgba(239, 68, 68, 0.15); border-radius: 6px; font-size: 0.75rem; font-weight: 500; color: #EF4444; }
+    .recording-indicator.active { display: flex; }
+    .recording-indicator .recording-dot { width: 8px; height: 8px; background: #EF4444; border-radius: 50%; animation: pulse 1.5s infinite; }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+    .meeting-main { flex: 1; display: flex; overflow: hidden; position: relative; }
+    .video-grid-container { flex: 1; padding: 1rem; overflow: auto; display: flex; align-items: center; justify-content: center; }
+    .video-grid { display: grid; gap: 0.75rem; width: 100%; max-width: 1600px; }
+    .video-grid.layout-1 { grid-template-columns: 1fr; max-width: 900px; }
+    .video-grid.layout-2 { grid-template-columns: repeat(2, 1fr); }
+    .video-grid.layout-4 { grid-template-columns: repeat(2, 1fr); }
+    .video-grid.layout-9 { grid-template-columns: repeat(3, 1fr); }
+    .video-tile { position: relative; aspect-ratio: 16 / 9; background: #1E293B; border-radius: 12px; overflow: hidden; border: 2px solid transparent; transition: border-color 0.2s; }
+    .video-tile.speaking { border-color: #10B981; box-shadow: 0 0 20px rgba(16, 185, 129, 0.3); }
+    .video-tile video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+    .video-tile-placeholder { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, #1E293B 0%, #0F172A 100%); }
+    .video-tile-placeholder .avatar { width: 80px; height: 80px; font-size: 2rem; }
+    .video-overlay { position: absolute; bottom: 0; left: 0; right: 0; padding: 0.75rem; background: linear-gradient(transparent, rgba(0, 0, 0, 0.7)); display: flex; align-items: center; justify-content: space-between; }
+    .participant-name { display: flex; align-items: center; gap: 0.375rem; font-size: 0.8125rem; font-weight: 500; color: white; }
+    .participant-name svg { width: 14px; height: 14px; }
+    .meeting-sidebar { width: 0; background: #1E293B; border-left: 1px solid #334155; display: flex; flex-direction: column; transition: width 0.3s; overflow: hidden; }
+    .meeting-sidebar.open { width: 360px; }
+    .meeting-sidebar-header { display: flex; align-items: center; justify-content: space-between; padding: 1rem; border-bottom: 1px solid #334155; }
+    .meeting-sidebar-title { font-size: 1rem; font-weight: 600; }
+    .meeting-sidebar-close { width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; background: transparent; color: #64748B; border: none; border-radius: 6px; cursor: pointer; }
+    .meeting-sidebar-close:hover { background: #334155; color: #F8FAFC; }
+    .meeting-sidebar-content { flex: 1; overflow-y: auto; padding: 1rem; }
+    .chat-messages { display: flex; flex-direction: column; gap: 1rem; height: 100%; overflow-y: auto; }
+    .chat-message { display: flex; gap: 0.75rem; }
+    .chat-message.self { flex-direction: row-reverse; }
+    .chat-message-content { flex: 1; min-width: 0; }
+    .chat-message-header { display: flex; align-items: baseline; gap: 0.5rem; margin-bottom: 0.25rem; }
+    .chat-message-name { font-weight: 500; font-size: 0.875rem; }
+    .chat-message.self .chat-message-name { color: #818CF8; }
+    .chat-message-time { font-size: 0.75rem; color: #64748B; }
+    .chat-message-text { font-size: 0.875rem; color: #94A3B8; word-wrap: break-word; }
+    .chat-message.system { justify-content: center; }
+    .chat-message.system .chat-message-text { color: #64748B; font-size: 0.8125rem; font-style: italic; }
+    .chat-input-container { padding: 1rem; border-top: 1px solid #334155; background: #0F172A; }
+    .chat-input-wrapper { display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem; background: #1E293B; border: 1px solid #334155; border-radius: 8px; }
+    .chat-input { flex: 1; padding: 0.5rem; background: transparent; color: #F8FAFC; font-size: 0.875rem; border: none; }
+    .chat-input::placeholder { color: #64748B; }
+    .chat-input-btn { width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; background: transparent; color: #64748B; border: none; border-radius: 6px; cursor: pointer; }
+    .chat-input-btn:hover { background: #334155; color: #F8FAFC; }
+    .chat-input-btn svg { width: 18px; height: 18px; }
+    .participants-list { display: flex; flex-direction: column; gap: 0.5rem; }
+    .participant-item { display: flex; align-items: center; gap: 0.75rem; padding: 0.75rem; background: #0F172A; border-radius: 8px; }
+    .participant-item .avatar { width: 36px; height: 36px; font-size: 0.8125rem; }
+    .participant-info { flex: 1; }
+    .participant-name-text { font-size: 0.875rem; font-weight: 500; color: #F8FAFC; }
+    .participant-role { font-size: 0.75rem; color: #64748B; }
+    .meeting-controls { display: flex; align-items: center; justify-content: center; gap: 0.5rem; padding: 1rem 1.5rem; background: rgba(15, 23, 42, 0.95); border-top: 1px solid #334155; flex-wrap: wrap; }
+    .control-btn { display: flex; flex-direction: column; align-items: center; gap: 0.375rem; padding: 0.75rem 1rem; min-width: 80px; background: transparent; border-radius: 8px; color: #94A3B8; border: none; cursor: pointer; transition: all 0.2s; font-size: 0.6875rem; }
+    .control-btn svg { width: 22px; height: 22px; }
+    .control-btn:hover { background: #334155; color: #F8FAFC; }
+    .control-btn.active { background: #6366F1; color: white; }
+    .control-btn.muted { background: rgba(239, 68, 68, 0.2); color: #EF4444; }
+    .control-btn.recording { background: rgba(239, 68, 68, 0.2); color: #EF4444; }
+    .control-btn.end-call { background: #EF4444; color: white; padding: 0.75rem 1.5rem; min-width: auto; }
+    .control-btn.end-call:hover { background: #DC2626; }
+    .control-divider { width: 1px; height: 40px; background: #334155; margin: 0 0.5rem; }
+    .record-dot { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -140%); width: 10px; height: 10px; background: #EF4444; border-radius: 50%; display: none; }
+    .control-btn.record-btn { position: relative; }
+    .control-btn.record-btn.active .record-dot { display: block; animation: pulse 1.5s infinite; }
+    .toast-container { position: fixed; bottom: 6rem; right: 1.5rem; z-index: 9999; }
+    .toast { display: flex; align-items: center; gap: 0.75rem; min-width: 280px; padding: 1rem; background: #1E293B; border: 1px solid #334155; border-radius: 8px; margin-bottom: 0.75rem; animation: slideUp 0.3s ease-out; box-shadow: 0 8px 24px rgba(0,0,0,0.25); }
+    .toast.success { border-color: #10B981; }
+    .toast.error { border-color: #EF4444; }
+    .toast-message { flex: 1; font-size: 0.875rem; }
+    @keyframes slideUp { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+    .reaction-float { position: fixed; font-size: 2rem; animation: floatUp 2s ease-out forwards; pointer-events: none; z-index: 200; }
+    @keyframes floatUp { 0% { opacity: 1; transform: translateY(0) scale(1); } 100% { opacity: 0; transform: translateY(-100px) scale(0.5); } }
+    .self-view { position: absolute; bottom: 1.5rem; right: 1.5rem; width: 200px; aspect-ratio: 16 / 9; background: #1E293B; border-radius: 8px; overflow: hidden; box-shadow: 0 16px 48px rgba(0,0,0,0.35); border: 2px solid #334155; z-index: 50; cursor: move; }
+    .self-view video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+    .self-view .video-overlay { padding: 0.5rem; }
+    .self-view .participant-name { font-size: 0.75rem; }
+    @media (max-width: 768px) {
+      .meeting-controls { padding: 0.75rem; gap: 0.25rem; }
+      .control-btn { padding: 0.5rem 0.75rem; min-width: 50px; }
+      .control-btn span { display: none; }
+      .control-btn svg { width: 20px; height: 20px; }
+      .control-divider { display: none; }
+      .meeting-sidebar.open { width: 100%; max-width: 100%; }
+      .video-grid { grid-template-columns: 1fr !important; }
+      .self-view { width: 120px; bottom: 5rem; right: 1rem; }
+    }
+  </style>
+</head>
+<body id="meetingPage">
+  <div class="meeting-container">
+    <header class="meeting-header">
+      <div class="meeting-info">
+        <div class="meeting-logo">
+          <svg viewBox="0 0 40 40" fill="none">
+            <rect width="40" height="40" rx="10" fill="#6366F1"/>
+            <path d="M12 13C12 11.8954 12.8954 11 14 11H26C27.1046 11 28 11.8954 28 13V27C28 28.1046 27.1046 29 26 29H14C12.8954 29 12 28.1046 12 27V13Z" fill="white"/>
+            <circle cx="20" cy="20" r="4" fill="#6366F1"/>
+          </svg>
+          <span>VideoMeet</span>
+        </div>
+        <div class="meeting-id">
+          <span>ID:</span>
+          <code id="meetingIdDisplay">---</code>
+          <button class="btn-icon-sm btn-ghost" onclick="copyToClipboard(document.getElementById('meetingIdDisplay').textContent)" style="background:transparent;border:none;color:#64748B;cursor:pointer;padding:4px;border-radius:4px;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="meeting-status">
+        <div class="recording-indicator" id="recordingIndicator">
+          <span class="recording-dot"></span>
+          REC
+        </div>
+        <div class="meeting-timer" id="meetingTimer">0:00</div>
+      </div>
+    </header>
+
+    <main class="meeting-main">
+      <div class="video-grid-container">
+        <div class="video-grid layout-1" id="videoGrid">
+          <div class="video-tile local" id="localTile">
+            <video id="localVideo" autoplay playsinline muted></video>
+            <div class="video-tile-placeholder" id="localPlaceholder">
+              <div class="avatar" id="localAvatar"></div>
+            </div>
+            <div class="video-overlay">
+              <div class="participant-name" id="localName">You</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="self-view" id="selfView">
+          <video id="selfVideo" autoplay playsinline muted></video>
+          <div class="video-overlay">
+            <div class="participant-name">You</div>
+          </div>
+        </div>
+      </div>
+
+      <aside class="meeting-sidebar" id="meetingSidebar">
+        <div id="sidebarContent"></div>
+      </aside>
+    </main>
+
+    <div class="meeting-controls">
+      <button class="control-btn" id="toggleMuteBtn" onclick="toggleMute()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></svg>
+        <span>Mute</span>
+      </button>
+
+      <button class="control-btn" id="toggleVideoBtn" onclick="toggleVideo()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+        <span>Stop Video</span>
+      </button>
+
+      <button class="control-btn" id="screenShareBtn" onclick="toggleScreenShare()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+        <span>Share Screen</span>
+      </button>
+
+      <div class="control-divider"></div>
+
+      <button class="control-btn record-btn" id="toggleRecordBtn" onclick="toggleRecording()">
+        <span class="record-dot"></span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3" fill="currentColor"/></svg>
+        <span>Record</span>
+      </button>
+
+      <button class="control-btn" id="toggleChatBtn" data-panel="chat" onclick="toggleSidebar('chat')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        <span>Chat</span>
+      </button>
+
+      <button class="control-btn" id="toggleParticipantsBtn" data-panel="participants" onclick="toggleSidebar('participants')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        <span>Participants</span>
+      </button>
+
+      <button class="control-btn" id="raiseHandBtn" onclick="raiseHand()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 11V6a2 2 0 0 0-2-2 2 2 0 0 0-2 2v0"/><path d="M14 10V4a2 2 0 0 0-2-2 2 2 0 0 0-2 2v2"/><path d="M10 10.5V6a2 2 0 0 0-2-2 2 2 0 0 0-2 2v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/></svg>
+        <span>Raise Hand</span>
+      </button>
+
+      <button class="control-btn" id="fullscreenBtn" onclick="toggleFullscreen()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>
+        <span>Fullscreen</span>
+      </button>
+
+      <div class="control-divider"></div>
+
+      <button class="control-btn end-call" id="endCallBtn" onclick="endCall()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+        <span>End</span>
+      </button>
+    </div>
+  </div>
+
+  <div class="toast-container" id="toastContainer"></div>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-app.js";
+    import { getAnalytics } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-analytics.js";
+    import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-auth.js";
+    import { getFirestore, doc, setDoc, getDoc, updateDoc, collection, addDoc, serverTimestamp, onSnapshot, query, orderBy } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-firestore.js";
+    import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-storage.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyAfnVDneU1fswdGuyuQrYL2Cu14SbdyphU",
+      authDomain: "zoom-1523.firebaseapp.com",
+      projectId: "zoom-1523",
+      storageBucket: "zoom-1523.firebasestorage.app",
+      messagingSenderId: "169784417830",
+      appId: "1:169784417830:web:49112b9bc07519e956d0e7",
+      measurementId: "G-80L03P8KY5"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const analytics = getAnalytics(app);
+    const auth = getAuth(app);
+    const db = getFirestore(app);
+    const storage = getStorage(app);
+
+    let currentUser = null;
+    let meetingId = null;
+    let localStream = null;
+    let screenStream = null;
+    let isMuted = false;
+    let isVideoOff = false;
+    let isScreenSharing = false;
+    let isRecording = false;
+    let mediaRecorder = null;
+    let recordedChunks = [];
+    let meetingStartTime = null;
+    let chatMessages = [];
+    let participants = [];
+
+    onAuthStateChanged(auth, (user) => {
+      if (!user) {
+        window.location.href = 'index.html';
+        return;
+      }
+      currentUser = user;
+      initMeeting();
+    });
+
+    function initMeeting() {
+      const urlParams = new URLSearchParams(window.location.search);
+      meetingId = urlParams.get('id') || generateMeetingId();
+      document.getElementById('meetingIdDisplay').textContent = meetingId;
+      document.getElementById('localName').textContent = currentUser.displayName || currentUser.email.split('@')[0];
+      document.getElementById('localAvatar').textContent = (currentUser.displayName || currentUser.email).charAt(0).toUpperCase();
+      
+      setupMedia();
+      startTimer();
+      setupChatListener();
+      joinMeeting();
+    }
+
+    async function setupMedia() {
+      try {
+        localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        const localVideo = document.getElementById('localVideo');
+        const selfVideo = document.getElementById('selfVideo');
+        if (localVideo) localVideo.srcObject = localStream;
+        if (selfVideo) selfVideo.srcObject = localStream;
+        document.getElementById('localPlaceholder').style.display = 'none';
+      } catch (err) {
+        console.error('Media permission error:', err);
+        showToast('Camera/microphone access required', 'error');
+      }
+    }
+
+    function toggleMute() {
+      isMuted = !isMuted;
+      if (localStream) {
+        localStream.getAudioTracks().forEach(track => track.enabled = !isMuted);
+      }
+      const btn = document.getElementById('toggleMuteBtn');
+      btn.classList.toggle('muted', isMuted);
+      btn.querySelector('span').textContent = isMuted ? 'Unmute' : 'Mute';
+      updateMeetingParticipant({ muted: isMuted });
+    }
+
+    function toggleVideo() {
+      isVideoOff = !isVideoOff;
+      if (localStream) {
+        localStream.getVideoTracks().forEach(track => track.enabled = !isVideoOff);
+      }
+      const btn = document.getElementById('toggleVideoBtn');
+      btn.classList.toggle('active', isVideoOff);
+      btn.querySelector('span').textContent = isVideoOff ? 'Start Video' : 'Stop Video';
+      document.getElementById('localPlaceholder').style.display = isVideoOff ? 'flex' : 'none';
+      updateMeetingParticipant({ videoOff: isVideoOff });
+    }
+
+    async function toggleScreenShare() {
+      if (isScreenSharing) {
+        if (screenStream) {
+          screenStream.getTracks().forEach(track => track.stop());
+          screenStream = null;
+        }
+        isScreenSharing = false;
+        const video = document.getElementById('localVideo');
+        if (video && localStream) video.srcObject = localStream;
+      } else {
+        try {
+          screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+          isScreenSharing = true;
+          const video = document.getElementById('localVideo');
+          if (video) video.srcObject = screenStream;
+          screenStream.getVideoTracks()[0].onended = () => {
+            isScreenSharing = false;
+            document.getElementById('screenShareBtn').classList.remove('active');
+            document.getElementById('screenShareBtn').querySelector('span').textContent = 'Share Screen';
+            if (video && localStream) video.srcObject = localStream;
+          };
+        } catch (err) {
+          return;
+        }
+      }
+      const btn = document.getElementById('screenShareBtn');
+      btn.classList.toggle('active', isScreenSharing);
+      btn.querySelector('span').textContent = isScreenSharing ? 'Stop Share' : 'Share Screen';
+    }
+
+    async function toggleRecording() {
+      if (isRecording) {
+        stopRecording();
+      } else {
+        startRecording();
+      }
+    }
+
+    function startRecording() {
+      if (!localStream) return;
+      
+      const streamToRecord = isScreenSharing && screenStream ? screenStream : localStream;
+      recordedChunks = [];
+      
+      const options = { mimeType: 'video/webm;codecs=vp9,opus' };
+      if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+        options.mimeType = 'video/webm;codecs=vp8,opus';
+      }
+      if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+        options.mimeType = 'video/webm';
+      }
+
+      try {
+        mediaRecorder = new MediaRecorder(streamToRecord, options);
+        
+        mediaRecorder.ondataavailable = (event) => {
+          if (event.data && event.data.size > 0) {
+            recordedChunks.push(event.data);
+          }
+        };
+
+        mediaRecorder.onstop = async () => {
+          await saveRecording();
+        };
+
+        mediaRecorder.start(1000);
+        isRecording = true;
+        document.getElementById('recordingIndicator').classList.add('active');
+        document.getElementById('toggleRecordBtn').classList.add('active', 'recording');
+        document.getElementById('toggleRecordBtn').querySelector('span').textContent = 'Stop Rec';
+        showToast('Recording started', 'success');
+      } catch (err) {
+        console.error('Recording error:', err);
+        showToast('Failed to start recording', 'error');
+      }
+    }
+
+    function stopRecording() {
+      if (mediaRecorder && isRecording) {
+        mediaRecorder.stop();
+        isRecording = false;
+        document.getElementById('recordingIndicator').classList.remove('active');
+        document.getElementById('toggleRecordBtn').classList.remove('active', 'recording');
+        document.getElementById('toggleRecordBtn').querySelector('span').textContent = 'Record';
+      }
+    }
+
+    async function saveRecording() {
+      if (recordedChunks.length === 0) return;
+
+      const blob = new Blob(recordedChunks, { type: 'video/webm' });
+      const fileName = `recording_${meetingId}_${Date.now()}.webm`;
+      
+      try {
+        const storageRef = ref(storage, `users/${currentUser.uid}/recordings/${fileName}`);
+        const snapshot = await uploadBytes(storageRef, blob);
+        const downloadURL = await getDownloadURL(snapshot.ref);
+
+        const recordingData = {
+          name: `Meeting ${meetingId} - ${new Date().toLocaleString()}`,
+          url: downloadURL,
+          meetingId: meetingId,
+          date: new Date().toISOString(),
+          size: formatFileSize(blob.size),
+          duration: Math.floor((Date.now() - meetingStartTime) / 1000),
+          createdAt: serverTimestamp()
+        };
+
+        await addDoc(collection(db, 'users', currentUser.uid, 'recordings'), recordingData);
+        showToast('Recording saved to cloud!', 'success');
+      } catch (err) {
+        console.error('Save recording error:', err);
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = fileName;
+        a.click();
+        showToast('Recording downloaded locally', 'success');
+      }
+    }
+
+    function formatFileSize(bytes) {
+      if (bytes === 0) return '0 Bytes';
+      const k = 1024;
+      const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+      const i = Math.floor(Math.log(bytes) / Math.log(k));
+      return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    }
+
+    function toggleSidebar(type) {
+      const sidebar = document.getElementById('meetingSidebar');
+      const allBtns = document.querySelectorAll('.control-btn[data-panel]');
+      allBtns.forEach(btn => btn.classList.remove('active'));
+
+      if (sidebar.classList.contains('open')) {
+        if (sidebar.dataset.panel === type) {
+          sidebar.classList.remove('open');
+        } else {
+          sidebar.dataset.panel = type;
+          renderSidebarContent(type);
+          document.getElementById(type + 'Btn').classList.add('active');
+        }
+      } else {
+        sidebar.classList.add('open');
+        sidebar.dataset.panel = type;
+        renderSidebarContent(type);
+        document.getElementById(type + 'Btn').classList.add('active');
+      }
+    }
+
+    function renderSidebarContent(type) {
+      const container = document.getElementById('sidebarContent');
+      if (type === 'chat') {
+        container.innerHTML = `
+          <div class="meeting-sidebar-header">
+            <h3 class="meeting-sidebar-title">Chat</h3>
+            <button class="meeting-sidebar-close" onclick="closeSidebar()">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+          </div>
+          <div class="meeting-sidebar-content">
+            <div class="chat-messages" id="chatMessages">${renderChatMessages()}</div>
+          </div>
+          <div class="chat-input-container">
+            <div class="chat-input-wrapper">
+              <input type="text" class="chat-input" id="chatInput" placeholder="Type a message..." onkeypress="if(event.key==='Enter')sendChat()">
+              <button class="chat-input-btn" onclick="sendChat()">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+              </button>
+            </div>
+          </div>
+        `;
+      } else if (type === 'participants') {
+        const allParticipants = [
+          { name: currentUser.displayName || currentUser.email.split('@')[0], isHost: true, muted: isMuted, videoOff: isVideoOff },
+          ...participants
+        ];
+        container.innerHTML = `
+          <div class="meeting-sidebar-header">
+            <h3 class="meeting-sidebar-title">Participants (${allParticipants.length})</h3>
+            <button class="meeting-sidebar-close" onclick="closeSidebar()">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+          </div>
+          <div class="meeting-sidebar-content">
+            <div class="participants-list">
+              ${allParticipants.map(p => `
+                <div class="participant-item">
+                  <div class="avatar">${p.name.charAt(0).toUpperCase()}</div>
+                  <div class="participant-info">
+                    <div class="participant-name-text">${escapeHtml(p.name)}${p.isHost ? ' (Host)' : ''}</div>
+                  </div>
+                  <div style="display:flex;gap:0.25rem;">
+                    ${p.muted ? '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#EF4444" stroke-width="2"><line x1="1" y1="1" x2="23" y2="23"/><path d="M9 9v3a3 3 0 0 0 5.12 2.12"/></svg>' : ''}
+                    ${p.videoOff ? '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#EF4444" stroke-width="2"><line x1="1" y1="1" x2="23" y2="23"/><path d="M16 16v1a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h2"/></svg>' : ''}
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        `;
+      }
+    }
+
+    function renderChatMessages() {
+      if (chatMessages.length === 0) {
+        return '<div style="text-align:center;color:#64748B;padding:2rem;">No messages yet</div>';
+      }
+      return chatMessages.map(msg => {
+        const isSelf = msg.senderId === currentUser.uid;
+        const time = new Date(msg.timestamp?.seconds ? msg.timestamp.seconds * 1000 : msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        
+        if (msg.type === 'system') {
+          return `<div class="chat-message system"><div class="chat-message-content"><div class="chat-message-text">${escapeHtml(msg.text)}</div></div></div>`;
+        }
+        
+        return `
+          <div class="chat-message ${isSelf ? 'self' : ''}">
+            <div class="avatar" style="width:32px;height:32px;font-size:0.75rem;">${msg.senderName?.charAt(0).toUpperCase() || '?'}</div>
+            <div class="chat-message-content">
+              <div class="chat-message-header">
+                <span class="chat-message-name">${escapeHtml(msg.senderName || 'Unknown')}</span>
+                <span class="chat-message-time">${time}</span>
+              </div>
+              <div class="chat-message-text">${escapeHtml(msg.text)}</div>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    async function sendChat() {
+      const input = document.getElementById('chatInput');
+      if (!input || !input.value.trim()) return;
+      
+      const text = input.value.trim();
+      input.value = '';
+
+      const message = {
+        text: text,
+        senderId: currentUser.uid,
+        senderName: currentUser.displayName || currentUser.email.split('@')[0],
+        timestamp: serverTimestamp(),
+        type: 'user'
+      };
+
+      try {
+        await addDoc(collection(db, 'meetings', meetingId, 'messages'), message);
+      } catch (err) {
+        console.error('Send message error:', err);
+      }
+    }
+
+    function setupChatListener() {
+      try {
+        const messagesRef = collection(db, 'meetings', meetingId, 'messages');
+        const q = query(messagesRef, orderBy('timestamp', 'asc'));
+        onSnapshot(q, (snapshot) => {
+          chatMessages = [];
+          snapshot.forEach(doc => {
+            chatMessages.push(doc.data());
+          });
+          if (document.getElementById('chatMessages')) {
+            document.getElementById('chatMessages').innerHTML = renderChatMessages();
+            const container = document.getElementById('chatMessages');
+            container.scrollTop = container.scrollHeight;
+          }
+        });
+      } catch (err) {
+        console.log('Chat listener skipped');
+      }
+    }
+
+    function closeSidebar() {
+      document.getElementById('meetingSidebar').classList.remove('open');
+      document.querySelectorAll('.control-btn[data-panel]').forEach(b => b.classList.remove('active'));
+    }
+
+    function raiseHand() {
+      const reaction = document.createElement('div');
+      reaction.className = 'reaction-float';
+      reaction.textContent = '✋';
+      reaction.style.left = '50%';
+      reaction.style.top = '50%';
+      document.querySelector('.meeting-main').appendChild(reaction);
+      setTimeout(() => reaction.remove(), 2000);
+    }
+
+    function toggleFullscreen() {
+      const container = document.querySelector('.meeting-container');
+      if (!document.fullscreenElement) {
+        container.requestFullscreen().catch(() => {});
+        container.classList.add('fullscreen');
+      } else {
+        document.exitFullscreen();
+        container.classList.remove('fullscreen');
+      }
+    }
+
+    function endCall() {
+      if (!confirm('Are you sure you want to leave the meeting?')) return;
+      
+      if (localStream) {
+        localStream.getTracks().forEach(track => track.stop());
+      }
+      if (screenStream) {
+        screenStream.getTracks().forEach(track => track.stop());
+      }
+      if (isRecording) {
+        stopRecording();
+      }
+      window.location.href = 'dashboard.html';
+    }
+
+    async function joinMeeting() {
+      try {
+        // Check if meeting exists
+        const meetingDoc = await getDoc(doc(db, 'meetings', meetingId));
+        if (!meetingDoc.exists()) {
+          // Create meeting if it doesn't exist (for direct link joins)
+          await setDoc(doc(db, 'meetings', meetingId), {
+            id: meetingId,
+            createdBy: currentUser.uid,
+            createdAt: serverTimestamp()
+          });
+        }
+      } catch (err) {
+        console.log('Meeting check skipped (Firestore may not be configured)');
+      }
+
+      const participant = {
+        id: currentUser.uid,
+        name: currentUser.displayName || currentUser.email.split('@')[0],
+        email: currentUser.email,
+        photoURL: currentUser.photoURL,
+        isHost: true,
+        joinedAt: serverTimestamp()
+      };
+
+      try {
+        await setDoc(doc(db, 'meetings', meetingId, 'participants', currentUser.uid), participant);
+        showToast('You joined the meeting', 'success');
+      } catch (err) {
+        console.log('Participant join skipped (Firestore may not be configured)');
+      }
+
+      setupParticipantsListener();
+    }
+
+    function setupParticipantsListener() {
+      try {
+        const participantsRef = collection(db, 'meetings', meetingId, 'participants');
+        onSnapshot(participantsRef, (snapshot) => {
+          participants = [];
+          snapshot.forEach(doc => {
+            if (doc.id !== currentUser.uid) {
+              participants.push(doc.data());
+            }
+          });
+        });
+      } catch (err) {
+        console.log('Participants listener skipped');
+      }
+    }
+
+    async function updateMeetingParticipant(data) {
+      try {
+        await updateDoc(doc(db, 'meetings', meetingId, 'participants', currentUser.uid), data);
+      } catch (err) {
+        console.error('Update participant error:', err);
+      }
+    }
+
+    function startTimer() {
+      meetingStartTime = Date.now();
+      setInterval(() => {
+        const elapsed = Math.floor((Date.now() - meetingStartTime) / 1000);
+        const h = Math.floor(elapsed / 3600);
+        const m = Math.floor((elapsed % 3600) / 60);
+        const s = elapsed % 60;
+        document.getElementById('meetingTimer').textContent = h > 0 
+          ? `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`
+          : `${m}:${s.toString().padStart(2, '0')}`;
+      }, 1000);
+    }
+
+    function generateMeetingId() {
+      const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
+      let result = '';
+      for (let i = 0; i < 3; i++) {
+        if (i > 0) result += '-';
+        for (let j = 0; j < 3; j++) {
+          result += chars.charAt(Math.floor(Math.random() * chars.length));
+        }
+      }
+      return result;
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    function showToast(message, type = 'info') {
+      const container = document.getElementById('toastContainer');
+      const toast = document.createElement('div');
+      toast.className = `toast ${type}`;
+      toast.innerHTML = `<span class="toast-message">${message}</span>`;
+      container.appendChild(toast);
+      setTimeout(() => toast.remove(), 4000);
+    }
+
+    window.toggleMute = toggleMute;
+    window.toggleVideo = toggleVideo;
+    window.toggleScreenShare = toggleScreenShare;
+    window.toggleRecording = toggleRecording;
+    window.toggleSidebar = toggleSidebar;
+    window.closeSidebar = closeSidebar;
+    window.raiseHand = raiseHand;
+    window.toggleFullscreen = toggleFullscreen;
+    window.endCall = endCall;
+    window.sendChat = sendChat;
+    window.copyToClipboard = function(text) {
+      navigator.clipboard.writeText(text).then(() => showToast('Copied!', 'success')).catch(() => showToast('Failed to copy', 'error'));
+    };
+  </script>
+</body>
+</html>
